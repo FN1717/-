@@ -5,6 +5,10 @@ const bestEl = document.querySelector("#best");
 const statusEl = document.querySelector("#status");
 const pauseButton = document.querySelector("#pauseButton");
 const restartButton = document.querySelector("#restartButton");
+const stateOverlay = document.querySelector("#stateOverlay");
+const overlayTitle = document.querySelector("#overlayTitle");
+const overlayHint = document.querySelector("#overlayHint");
+const directionButtons = document.querySelectorAll("[data-direction]");
 
 const gridSize = 20;
 const tileCount = canvas.width / gridSize;
@@ -22,6 +26,14 @@ let speed;
 let running;
 let paused;
 let gameOver;
+let foodPulse;
+
+const directions = {
+  up: { x: 0, y: -1 },
+  down: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+  right: { x: 1, y: 0 },
+};
 
 function loadBestScore() {
   return Number(localStorage.getItem("snakeBestScore") || 0);
@@ -44,11 +56,13 @@ function resetGame() {
   running = false;
   paused = false;
   gameOver = false;
+  foodPulse = 0;
   pauseButton.textContent = "暂停";
   statusEl.textContent = "按方向键或 WASD 开始";
   scoreEl.textContent = "0";
   placeFood();
   stopLoop();
+  updateOverlay();
   draw();
 }
 
@@ -58,6 +72,7 @@ function startLoop() {
   paused = false;
   statusEl.textContent = "进行中";
   pauseButton.textContent = "暂停";
+  updateOverlay();
   scheduleTick();
 }
 
@@ -70,6 +85,7 @@ function stopLoop() {
 function scheduleTick() {
   clearTimeout(gameTimer);
   gameTimer = setTimeout(() => {
+    foodPulse += 1;
     update();
     draw();
     if (running) scheduleTick();
@@ -110,6 +126,32 @@ function endGame() {
   stopLoop();
   gameOver = true;
   statusEl.textContent = "游戏结束，按空格或重新开始";
+  updateOverlay();
+}
+
+function updateOverlay() {
+  if (gameOver) {
+    stateOverlay.classList.add("is-visible");
+    overlayTitle.textContent = "游戏结束";
+    overlayHint.textContent = "按空格或重新开始再来一局";
+    return;
+  }
+
+  if (paused) {
+    stateOverlay.classList.add("is-visible");
+    overlayTitle.textContent = "已暂停";
+    overlayHint.textContent = "按空格或点击继续";
+    return;
+  }
+
+  if (!running) {
+    stateOverlay.classList.add("is-visible");
+    overlayTitle.textContent = "准备开始";
+    overlayHint.textContent = "方向键 / WASD 移动，空格暂停";
+    return;
+  }
+
+  stateOverlay.classList.remove("is-visible");
 }
 
 function hitWall(point) {
@@ -137,9 +179,14 @@ function draw() {
 }
 
 function drawGrid() {
-  ctx.fillStyle = "#11181c";
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, "#07111e");
+  gradient.addColorStop(0.48, "#081421");
+  gradient.addColorStop(1, "#050a13");
+  ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.045)";
+
+  ctx.strokeStyle = "rgba(91, 235, 255, 0.075)";
   ctx.lineWidth = 1;
 
   for (let i = 0; i <= tileCount; i += 1) {
@@ -153,36 +200,85 @@ function drawGrid() {
     ctx.lineTo(canvas.width, pos);
     ctx.stroke();
   }
+
+  ctx.strokeStyle = "rgba(255, 79, 216, 0.15)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
 }
 
 function drawFood() {
-  const pad = 4;
-  ctx.fillStyle = "#ff6b5f";
+  const centerX = food.x * gridSize + gridSize / 2;
+  const centerY = food.y * gridSize + gridSize / 2;
+  const pulse = Math.sin(foodPulse * 0.42) * 1.8;
+  const radius = 5.8 + pulse;
+
+  ctx.save();
+  ctx.shadowColor = "#ff4fd8";
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = "#ff4fd8";
   ctx.beginPath();
-  ctx.roundRect(
-    food.x * gridSize + pad,
-    food.y * gridSize + pad,
-    gridSize - pad * 2,
-    gridSize - pad * 2,
-    5,
-  );
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
   ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#ffd166";
+  ctx.beginPath();
+  ctx.arc(centerX - 1.5, centerY - 1.5, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawSnake() {
   snake.forEach((part, index) => {
-    const pad = index === 0 ? 2 : 3;
-    ctx.fillStyle = index === 0 ? "#b6f26f" : "#69d391";
+    const pad = index === 0 ? 2 : 3.2;
+    const x = part.x * gridSize + pad;
+    const y = part.y * gridSize + pad;
+    const size = gridSize - pad * 2;
+    const fill = ctx.createLinearGradient(x, y, x + size, y + size);
+
+    if (index === 0) {
+      fill.addColorStop(0, "#f1ff7a");
+      fill.addColorStop(0.5, "#a8ff5f");
+      fill.addColorStop(1, "#48f7b1");
+      ctx.shadowColor = "#c7ff4f";
+      ctx.shadowBlur = 14;
+    } else {
+      const fade = Math.max(0.46, 1 - index / snake.length);
+      fill.addColorStop(0, `rgba(98, 255, 156, ${fade})`);
+      fill.addColorStop(1, `rgba(91, 235, 255, ${Math.max(0.34, fade - 0.1)})`);
+      ctx.shadowColor = "#62ff9c";
+      ctx.shadowBlur = 8;
+    }
+
+    ctx.fillStyle = fill;
     ctx.beginPath();
-    ctx.roundRect(
-      part.x * gridSize + pad,
-      part.y * gridSize + pad,
-      gridSize - pad * 2,
-      gridSize - pad * 2,
-      5,
-    );
+    ctx.roundRect(x, y, size, size, index === 0 ? 7 : 5);
     ctx.fill();
+
+    if (index === 0) {
+      drawSnakeEyes(part);
+    }
   });
+
+  ctx.shadowBlur = 0;
+}
+
+function drawSnakeEyes(head) {
+  const centerX = head.x * gridSize + gridSize / 2;
+  const centerY = head.y * gridSize + gridSize / 2;
+  const eyeOffsetX = direction.y === 0 ? 3 * direction.x : 4;
+  const eyeOffsetY = direction.x === 0 ? 3 * direction.y : 4;
+  const secondEyeOffsetX = direction.y === 0 ? 3 * direction.x : -4;
+  const secondEyeOffsetY = direction.x === 0 ? 3 * direction.y : -4;
+
+  ctx.save();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#07101a";
+  ctx.beginPath();
+  ctx.arc(centerX + eyeOffsetX, centerY + eyeOffsetY, 2, 0, Math.PI * 2);
+  ctx.arc(centerX + secondEyeOffsetX, centerY + secondEyeOffsetY, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function setDirection(newDirection) {
@@ -206,6 +302,7 @@ function togglePause() {
     paused = true;
     statusEl.textContent = "已暂停";
     pauseButton.textContent = "继续";
+    updateOverlay();
   } else {
     startLoop();
   }
@@ -213,18 +310,18 @@ function togglePause() {
 
 function handleKeydown(event) {
   const keyMap = {
-    ArrowUp: { x: 0, y: -1 },
-    w: { x: 0, y: -1 },
-    W: { x: 0, y: -1 },
-    ArrowDown: { x: 0, y: 1 },
-    s: { x: 0, y: 1 },
-    S: { x: 0, y: 1 },
-    ArrowLeft: { x: -1, y: 0 },
-    a: { x: -1, y: 0 },
-    A: { x: -1, y: 0 },
-    ArrowRight: { x: 1, y: 0 },
-    d: { x: 1, y: 0 },
-    D: { x: 1, y: 0 },
+    ArrowUp: directions.up,
+    w: directions.up,
+    W: directions.up,
+    ArrowDown: directions.down,
+    s: directions.down,
+    S: directions.down,
+    ArrowLeft: directions.left,
+    a: directions.left,
+    A: directions.left,
+    ArrowRight: directions.right,
+    d: directions.right,
+    D: directions.right,
   };
 
   if (event.code === "Space") {
@@ -246,10 +343,22 @@ function handleKeydown(event) {
   startLoop();
 }
 
+function handleDirectionButton(event) {
+  const button = event.currentTarget;
+  const newDirection = directions[button.dataset.direction];
+  if (!newDirection) return;
+
+  setDirection(newDirection);
+  startLoop();
+}
+
 pauseButton.addEventListener("click", togglePause);
 restartButton.addEventListener("click", () => {
   resetGame();
   startLoop();
+});
+directionButtons.forEach((button) => {
+  button.addEventListener("click", handleDirectionButton);
 });
 window.addEventListener("keydown", handleKeydown);
 
